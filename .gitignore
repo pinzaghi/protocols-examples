@@ -1,0 +1,7 @@
+*/P/netcoreapp3.1/
+*/P/obj/
+*/P/PGenerated/
+
+*/tla/*.toolbox/
+
+*.pdf
