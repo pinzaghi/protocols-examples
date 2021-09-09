@@ -5,34 +5,37 @@ machine Backup
     var leader : Primary;
     var decision : map[PhaseType, Vote];
 
-    start state Init {
-        entry {
+    start state Init 
+    {
+        entry 
+        {
             localPhase = 0;
         }
 
-        on configMessage do (payload: Primary){
+        on configMessage do (payload: Primary)
+        {
             leader = payload;
             goto Alpha;
         }
     }
 
-    state Alpha {
-
-        entry {
-        }
-
-        on alphaMessage do (m : AlphaMessageType) {
+    state Alpha 
+    {
+        on alphaMessage do (m : AlphaMessageType) 
+        {
             goto Beta;
         }
-
     }
 
-    state Beta {
+    state Beta 
+    {
 
-        entry {
+        entry 
+        {
             var v : Vote;
             v = ABORT;
-            if($){
+            if($)
+            {
                 v = COMMIT;
             }
             send leader, betaMessage, (phase = localPhase, vote = v);
@@ -41,29 +44,27 @@ machine Backup
 
     }
 
-    state Gamma {
-
-        on gammaMessage do (m : GammaMessageType) {
-
-            if(m.decision == COMMIT){
+    state Gamma 
+    {
+        on gammaMessage do (m : GammaMessageType) 
+        {
+            if(m.decision == COMMIT)
+            {
                 decision[localPhase] = COMMIT;
-            }else{
+            } else {
                 decision[localPhase] = ABORT;
             }
             goto Delta;
             
         }
-
     }
 
     state Delta {
-
-        entry {
+        entry 
+        {
             send leader, deltaMessage, (phase = localPhase, ack=true);
             localPhase = localPhase+1;
             goto Alpha;
         }
-
     }
-
 }
