@@ -6,26 +6,26 @@ machine Backup
     var decision : map[PhaseType, Vote];
 
     start state Init {
-		entry {
-			localPhase = 0;
-		}
+        entry {
+            localPhase = 0;
+        }
 
         on configMessage do (payload: Primary){
             leader = payload;
-			goto Alpha;
+            goto Alpha;
         }
-	}
+    }
 
     state Alpha {
 
         entry {
-		}
+        }
 
-		on alphaMessage do (m : AlphaMessageType) {
+        on alphaMessage do (m : AlphaMessageType) {
             goto Beta;
-		}
+        }
 
-	}
+    }
 
     state Beta {
 
@@ -37,7 +37,7 @@ machine Backup
             }
             send leader, betaMessage, (phase = localPhase, vote = v);
             goto Gamma;
-		}
+        }
 
     }
 
@@ -52,7 +52,7 @@ machine Backup
             }
             goto Delta;
             
-		}
+        }
 
     }
 

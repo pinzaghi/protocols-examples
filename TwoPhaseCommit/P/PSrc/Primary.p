@@ -26,16 +26,16 @@ machine Primary
     var decision : map[PhaseType, Vote];
 
     start state Init {
-		entry (payload: seq[Backup]){
-			participants = payload;
-			localPhase = 0; 
+        entry (payload: seq[Backup]){
+            participants = payload;
+            localPhase = 0; 
             initMbox(localPhase);
             sendConfig(participants, this);
 
             announce eMonitor_AtomicityInitialize, sizeof(participants);
-			goto Alpha;
-		}
-	}
+            goto Alpha;
+        }
+    }
 
     state Alpha {
 
@@ -43,9 +43,9 @@ machine Primary
             var newcommand : CommandType;
             Broadcast(alphaMessage, (phase = localPhase, command = newcommand), participants);
             goto Beta;
-		}
+        }
 
-	}
+    }
 
     state Beta {
 
@@ -66,7 +66,7 @@ machine Primary
                 decision[m.phase] = commit_or_abort(commitvotes[m.phase], sizeof(participants)); 
                 goto Gamma;
             }
-		}
+        }
 
     }
 
@@ -75,7 +75,7 @@ machine Primary
         entry {
             Broadcast(gammaMessage, (phase = localPhase, decision = decision[localPhase]), participants);
             goto Delta;
-		}
+        }
 
     }
 
@@ -90,7 +90,7 @@ machine Primary
                 initMbox(localPhase);
                 goto Alpha;
             }
-		}
+        }
 
     }
 
