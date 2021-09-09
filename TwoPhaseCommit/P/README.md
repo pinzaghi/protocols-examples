@@ -1,4 +1,6 @@
-# To compile
+# 2PC in the P language
+
+## To compile
 
 ```
 pc -proj:TwoPhaseCommit.pproj
