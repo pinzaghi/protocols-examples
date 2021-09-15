@@ -1,0 +1,79 @@
+INPUT: role
+
+init()
+{
+    if(role == Primary){
+        participants = payload;
+        N = sizeof(participants);
+        sendConfig();
+        announce eMonitor_AtomicityInitialize, N;
+
+        localPhase = 0;
+        round = Alpha;
+    }
+
+    if(role == Backup){
+        localPhase = 0;
+    }
+}
+
+upon(round == Alpha /\ role == Primary /\ eClientRequest) 
+{
+    var newcommand : CommandType;
+    initMbox(localPhase);
+    Broadcast(Alpha, (phase = localPhase, command = newcommand));
+    round = Beta;
+}
+
+upon(round == Beta /\ role == Primary /\ count_mbox(Beta) == N)
+{
+    decision[m.phase] = commit_or_abort(m.phase); 
+    round = Gamma;
+}
+
+upon(round == Gamma /\ role == Primary)
+{
+    Broadcast(Gamma, (phase = localPhase, decision = decision[localPhase]));
+    round = Delta;
+}
+
+upon(round == Delta /\ role == Primary /\ count_mbox(Delta) == N)
+{
+    localPhase = localPhase+1;
+    round = Alpha;
+}
+
+upon(round == Alpha /\ role == Backup /\ count_mbox(Alpha) == 1)
+{
+    round = Beta;
+}
+
+upon(round == Beta /\ role == Backup)
+{
+    var v : Vote;
+    v = ABORT;
+    if($)
+    {
+        v = COMMIT;
+    }
+    send leader, Beta, (phase = localPhase, vote = v);
+    round = Gamma;
+}
+
+upon(round == Gamma /\ role == Backup /\ count_mbox(Gamma) == 1)
+{
+    if(m.decision == COMMIT)
+    {
+        decision[localPhase] = COMMIT;
+    } else {
+        decision[localPhase] = ABORT;
+    }
+    round = Delta;
+}
+
+upon(round == Delta /\ role == Backup)
+{
+    send leader, Delta, (phase = localPhase, ack=true);
+    localPhase = localPhase+1;
+    round = Alpha;
+}
