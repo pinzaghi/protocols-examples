@@ -10,7 +10,7 @@ machine TwoPhaseSync
 
     var messages : Messages;
 
-    var decision : map[Phase,map[Participant, Vote]];
+    var decision : map[Participant,map[Phase, Vote]];
 
     start state Init 
     {
@@ -21,7 +21,7 @@ machine TwoPhaseSync
             leader = 0;
             Init(PHASE);
 
-            announce eMonitor_AtomicityInitialize, N;
+            announce eMonitor_Initialize, N;
         }
 
         on eClientRequest do (m : ClientRequest) 
@@ -37,15 +37,26 @@ machine TwoPhaseSync
             // ###### SEND ######
             var newcommand : Command;
             // Broadcast from leader to all
-            var i: int; i = 0;
+            var i: int; 
+            i = 0;
             while (i < N) 
             {
-                send this, eAlphaMessage, (phase = PHASE, dst=i, payload=newcommand);
+                send this, eAlphaMessage, (phase = PHASE, from=leader, dst=i, payload=newcommand);
                 i = i + 1;
             }
 
             // #### UPDATE ######
             ReceiveMessages(ALPHA);
+            i = 0;
+            while (i < N) 
+            {
+                decision[i][PHASE] = ABORT;
+                if($)
+                {
+                    decision[i][PHASE] = COMMIT; 
+                }
+                i = i + 1;
+            }
 
             goto Beta;
         }
@@ -56,18 +67,12 @@ machine TwoPhaseSync
     {
         entry 
         {
-            var i: int; 
-            var v : Vote;
             // ###### SEND ######
+            var i: int; 
             i = 0;
             while (i < N) 
             {
-                v = ABORT;
-                if($)
-                {
-                    v = COMMIT; 
-                }
-                send this, eBetaMessage, (phase = PHASE, dst=leader, payload = v);
+                send this, eBetaMessage, (phase = PHASE, from=i, dst=leader, payload = decision[i][PHASE]);
                 i = i + 1;
             }
 
@@ -75,17 +80,16 @@ machine TwoPhaseSync
             ReceiveMessages(BETA);
             
             // Primary decides using votes
-            i = 0;
-            v = COMMIT;
+            decision[leader][PHASE] = COMMIT;
 
+            i = 0;
             while (i < sizeof(messages[leader][PHASE][BETA])) 
             {
                 if(messages[leader][PHASE][BETA][i].payload == ABORT){
-                    v = ABORT;
+                    decision[leader][PHASE] = ABORT;
                 }
                 i=i+1;
             }
-            decision[PHASE][leader] = v;
 
             goto Gamma;
         }
@@ -103,7 +107,7 @@ machine TwoPhaseSync
             i = 0;
             while (i < N) 
             {
-                send this, eGammaMessage, (phase = PHASE, dst=i, payload = decision[PHASE][leader]);
+                send this, eGammaMessage, (phase = PHASE, from=leader, dst=i, payload = decision[leader][PHASE]);
                 i = i + 1;
             }
 
@@ -111,13 +115,12 @@ machine TwoPhaseSync
             ReceiveMessages(GAMMA);
 
             // Backups record decision
-            i = 0;
+            finaldecision = decision[leader][PHASE];
 
-            finaldecision = decision[PHASE][leader];
-            
+            i = 0;
             while (i < N) 
             {
-                decision[PHASE][i] = finaldecision;
+                decision[i][PHASE] = finaldecision;
                 i = i + 1;
             }
 
@@ -134,7 +137,7 @@ machine TwoPhaseSync
             i = 0;
             while (i < N) 
             {
-                send this, eDeltaMessage, (phase = PHASE, dst=leader, payload = true);
+                send this, eDeltaMessage, (phase = PHASE, from=i, dst=leader, payload = true);
                 i = i + 1;
             }
 
@@ -157,12 +160,13 @@ machine TwoPhaseSync
     fun Init(phase: Phase)
     {
         var i: int; i = 0;
-
-        decision[PHASE] = default(map[Participant, Vote]);
-
+       
+        decision = default(map[Participant,map[Phase, Vote]]);
         messages = default(Messages);
 
         while (i < N) {
+            decision[i] = default(map[Phase, Vote]);
+            
             messages[i] = default(Mbox);
             messages[i][PHASE] = default(map[Round, seq[Message]]);
 

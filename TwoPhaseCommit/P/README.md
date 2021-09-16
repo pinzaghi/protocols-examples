@@ -8,12 +8,16 @@ pc -proj:TwoPhaseCommit.pproj
 
 ## Run model checking with 1000 schedulers
 ```
-pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestAsync0.Execute -i 1000
+pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestAsyncBasic.Execute -i 1000
 
-pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestAsync1.Execute -i 1000
+pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestAsyncAtomicity.Execute -i 1000
 
-pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestSync0.Execute -i 1000
+pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestAsyncSyncTag.Execute -i 1000
 
-pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestSync1.Execute -i 1000
+pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestSyncBasic.Execute -i 1000
+
+pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestSyncAtomicity.Execute -i 1000
+
+pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestSyncSyncTag.Execute -i 1000
 
 ```

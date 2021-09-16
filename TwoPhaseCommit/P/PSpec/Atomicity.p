@@ -1,14 +1,14 @@
 // event used to initialize the AtomicityInvariant spec monitor
-event eMonitor_AtomicityInitialize: int;
+event eMonitor_Initialize: int;
 
 // We would like to assert the atomicity property that if a transaction is committed by the coordinator then it was agreed on by all participants
-spec AtomicityInvariant observes eBetaMessage, eGammaMessage, eMonitor_AtomicityInitialize
+spec AtomicityInvariant observes eBetaMessage, eGammaMessage, eMonitor_Initialize
 {
     // a map from transaction id to a map from responses status to number of participants with that response
     var participantsResponse: map[Phase, map[data, int]];
     var numParticipants: int;
     start state Init {
-        on eMonitor_AtomicityInitialize goto WaitForEvents with (n: int) {
+        on eMonitor_Initialize goto WaitForEvents with (n: int) {
             numParticipants = n;
         }
     }

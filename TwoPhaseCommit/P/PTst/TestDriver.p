@@ -11,13 +11,13 @@ machine TestDriverAsync0 {
             var participants: seq[Backup];
             var i : int;
 
-            N = 5;
+            N = 6; // 5 Backups
             i = 0;
             while (i < N) {
-                participants += (i, new Backup());
+                participants += (i, new Backup(i+1));
                 i = i + 1;
             }
-            prim = new Primary(participants);
+            prim = new Primary((id=0, participants=participants));
 
             send prim, eClientRequest, (transactionId = 100, command = "x = 0;");
             send prim, eClientRequest, (transactionId = 101, command = "x = 1;");
@@ -31,8 +31,8 @@ machine TestDriverSync0 {
             var N : int;
             var system : TwoPhaseSync;
 
-            N = 5;
-            system = new TwoPhaseSync(N+1);
+            N = 6; // 5 Backups + 1 Primary
+            system = new TwoPhaseSync(N);
 
             send system, eClientRequest, (transactionId = 100, command = "x = 0;");
             send system, eClientRequest, (transactionId = 101, command = "x = 1;");

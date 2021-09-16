@@ -1,9 +1,9 @@
 event eMessage : Message;
 
-event eAlphaMessage: (phase: Phase, dst: int, payload: AlphaPayload);
-event eBetaMessage: (phase: Phase, dst: int, payload: BetaPayload);
-event eGammaMessage: (phase: Phase, dst: int, payload: GammaPayload);
-event eDeltaMessage: (phase: Phase, dst: int, payload: DeltaPayload);
+event eAlphaMessage: (phase: Phase, from: Participant, dst: Participant, payload: AlphaPayload);
+event eBetaMessage: (phase: Phase, from: Participant, dst: Participant, payload: BetaPayload);
+event eGammaMessage: (phase: Phase, from: Participant, dst: Participant, payload: GammaPayload);
+event eDeltaMessage: (phase: Phase, from: Participant, dst: Participant, payload: DeltaPayload);
 
 type Command = int;
 type Phase = int;
@@ -14,7 +14,7 @@ event eClientRequest: ClientRequest;
 
 type ClientRequest = (transactionId: int, command: string);
 
-type Message = (phase: Phase, dst: int, payload: data);
+type Message = (phase: Phase, from: Participant, dst: Participant, payload: data);
 
 type AlphaPayload = Command;
 type BetaPayload = Vote;
@@ -26,7 +26,8 @@ enum Vote {COMMIT, ABORT}
 
 machine Primary
 {
-    var N : int;
+    var numBackup : int;
+    var ID : Participant;
     var participants : seq[Backup];
     var localPhase : Phase;
     var mbox : Mbox;
@@ -37,11 +38,13 @@ machine Primary
     {
         defer eClientRequest;
 
-        entry (payload: seq[Backup]){
-            participants = payload;
-            N = sizeof(participants);
+        entry (payload: (id: Participant, participants: seq[Backup])){
+            participants = payload.participants;
+            ID = payload.id;
+            numBackup = sizeof(payload.participants);
             sendConfig();
-            announce eMonitor_AtomicityInitialize, N;
+
+            announce eMonitor_Initialize, numBackup+1;
 
             localPhase = 0; 
             goto Alpha;
@@ -56,7 +59,7 @@ machine Primary
         {
             var newcommand : Command;
             initMbox(localPhase);
-            Broadcast(eAlphaMessage, (phase = localPhase, dst=0, command = newcommand));
+            Broadcast(eAlphaMessage, (phase = localPhase, from=ID, dst=0, payload = newcommand));
             goto Beta;
         }
     }
@@ -74,7 +77,7 @@ machine Primary
 
             mbox[m.phase][BETA] += (sizeof(mbox[m.phase][BETA]),m);
 
-            if(sizeof(mbox[m.phase][BETA]) == N)
+            if(sizeof(mbox[m.phase][BETA]) == numBackup)
             {
                 decision[m.phase] = commit_or_abort(m.phase); 
                 goto Gamma;
@@ -88,7 +91,7 @@ machine Primary
 
         entry 
         {
-            Broadcast(eGammaMessage, (phase = localPhase, dst=0, payload = decision[localPhase]));
+            Broadcast(eGammaMessage, (phase = localPhase, from=ID, dst=0, payload = decision[localPhase]));
             goto Delta;
         }
     }
@@ -101,7 +104,7 @@ machine Primary
         {
             mbox[m.phase][DELTA] += (sizeof(mbox[m.phase][DELTA]),m);
 
-            if(sizeof(mbox[m.phase][DELTA]) == N)
+            if(sizeof(mbox[m.phase][DELTA]) == numBackup)
             {
                 localPhase = localPhase+1;
                 goto Alpha;
@@ -125,7 +128,7 @@ machine Primary
     {
         var decision : Vote;
         decision = ABORT;
-        if(commitvotes[phase] == N)
+        if(commitvotes[phase] == numBackup)
         {
             decision = COMMIT;
         }
@@ -133,11 +136,12 @@ machine Primary
         return decision;
     }
 
-    fun Broadcast(message: event, payload: any)
+    fun Broadcast(message: event, payload: Message)
     {
-        var i: int; i = 0;
-        while (i < N) 
+        var i: int; i = 1;
+        while (i < numBackup) 
         {
+            payload.dst = i;
             send participants[i], message, payload;
             i = i + 1;
         }
@@ -147,7 +151,7 @@ machine Primary
     {
         var i : int;
         i = 0;
-        while (i < N) 
+        while (i < numBackup) 
         {
             send participants[i], configMessage, this;
             i = i + 1;
@@ -158,14 +162,16 @@ machine Primary
 machine Backup
 {
     var participants : seq[Backup];
+    var ID : Participant;
     var localPhase : Phase;
     var leader : Primary;
     var decision : map[Phase, Vote];
 
     start state Init 
     {
-        entry 
+        entry (id: Participant)
         {
+            ID = id;
             localPhase = 0;
         }
 
@@ -195,7 +201,7 @@ machine Backup
             {
                 v = COMMIT;
             }
-            send leader, eBetaMessage, (phase = localPhase, dst=0, payload = v);
+            send leader, eBetaMessage, (phase = localPhase, from=ID, dst=0, payload = v);
             goto Gamma;
         }
 
@@ -218,7 +224,7 @@ machine Backup
     state Delta {
         entry 
         {
-            send leader, eDeltaMessage, (phase = localPhase, dst=0, payload=true);
+            send leader, eDeltaMessage, (phase = localPhase, from=ID, dst=0, payload=true);
             localPhase = localPhase+1;
             goto Alpha;
         }
