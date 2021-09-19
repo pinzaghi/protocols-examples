@@ -5,8 +5,4 @@ test TestAsyncAtomicity[main = TestDriverAsync0]: assert AtomicityInvariant in {
 
 test TestAsyncSyncTag[main = TestDriverAsync0]: assert SyncTagInvariant in { TestDriverAsync0, Primary, Backup };
 
-test TestSyncBasic[main = TestDriverSync0]: { TestDriverSync0, TwoPhaseSync };
-
-test TestSyncAtomicity[main = TestDriverSync0]: assert AtomicityInvariant in { TestDriverSync0, TwoPhaseSync };
-
-test TestSyncSyncTag[main = TestDriverSync0]: assert SyncTagInvariant in { TestDriverSync0, TwoPhaseSync };
+test TestSyncBasic[main = TestDriverSync0]: { TestDriverSync0, TwoPhaseSync, Participant };

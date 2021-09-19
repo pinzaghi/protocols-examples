@@ -16,8 +16,4 @@ pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestAsyncSyncTag.Execute
 
 pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestSyncBasic.Execute -i 1000
 
-pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestSyncAtomicity.Execute -i 1000
-
-pmc netcoreapp3.1/TwoPhaseCommit.dll -m PImplementation.TestSyncSyncTag.Execute -i 1000
-
 ```

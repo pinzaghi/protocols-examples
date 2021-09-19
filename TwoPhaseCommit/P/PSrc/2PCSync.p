@@ -1,27 +1,28 @@
-type Participant = int;
-
-type Messages = map[Participant, Mbox];
+type Messages = map[machine, Mbox];
 
 machine TwoPhaseSync
 {
-    var N : int;
+    var numBackups : int;
     var PHASE : Phase;
-    var leader : int;
+    var leader : machine;
+    var participants : seq[machine];
 
     var messages : Messages;
 
-    var decision : map[Participant,map[Phase, Vote]];
+    var decision : map[machine,map[Phase, Vote]];
 
     start state Init 
     {
-        entry (participants: int){
+        entry (p: seq[machine]){
 
-            N = participants;
+            participants = p;
+            numBackups = sizeof(participants)-1;
+            
             PHASE = 0; 
-            leader = 0;
+            leader = participants[0];
             Init(PHASE);
 
-            announce eMonitor_Initialize, N;
+            announce eMonitor_Initialize, participants;
         }
 
         on eClientRequest do (m : ClientRequest) 
@@ -38,22 +39,24 @@ machine TwoPhaseSync
             var newcommand : Command;
             // Broadcast from leader to all
             var i: int; 
+            var id: int;
             i = 0;
-            while (i < N) 
+            while (i < numBackups) 
             {
-                send this, eAlphaMessage, (phase = PHASE, from=leader, dst=i, payload=newcommand);
+                send this, eMessage, (phase = PHASE, from=leader, payload=newcommand);
                 i = i + 1;
             }
 
             // #### UPDATE ######
             ReceiveMessages(ALPHA);
             i = 0;
-            while (i < N) 
+            while (i < numBackups) 
             {
-                decision[i][PHASE] = ABORT;
+                id = i+1;
+                decision[participants[id]][PHASE] = ABORT;
                 if($)
                 {
-                    decision[i][PHASE] = COMMIT; 
+                    decision[participants[id]][PHASE] = COMMIT; 
                 }
                 i = i + 1;
             }
@@ -69,10 +72,12 @@ machine TwoPhaseSync
         {
             // ###### SEND ######
             var i: int; 
+            var id: int;
             i = 0;
-            while (i < N) 
+            while (i < numBackups) 
             {
-                send this, eBetaMessage, (phase = PHASE, from=i, dst=leader, payload = decision[i][PHASE]);
+                id = i+1;
+                send this, eMessage, (phase = PHASE, from=participants[id], payload = decision[participants[id]][PHASE]);
                 i = i + 1;
             }
 
@@ -102,12 +107,13 @@ machine TwoPhaseSync
         {
             // ###### SEND ######
             var i: int; 
+            var id : int;
             var finaldecision : Vote;
             
             i = 0;
-            while (i < N) 
+            while (i < numBackups) 
             {
-                send this, eGammaMessage, (phase = PHASE, from=leader, dst=i, payload = decision[leader][PHASE]);
+                send this, eMessage, (phase = PHASE, from=leader, payload = decision[leader][PHASE]);
                 i = i + 1;
             }
 
@@ -118,9 +124,10 @@ machine TwoPhaseSync
             finaldecision = decision[leader][PHASE];
 
             i = 0;
-            while (i < N) 
+            while (i < numBackups) 
             {
-                decision[i][PHASE] = finaldecision;
+                id = i+1;
+                decision[participants[id]][PHASE] = finaldecision;
                 i = i + 1;
             }
 
@@ -132,12 +139,14 @@ machine TwoPhaseSync
     {
         entry 
         {
-            var i: int; 
+            var i: int;
+            var id: int; 
             // ###### SEND ######
             i = 0;
-            while (i < N) 
+            while (i < numBackups) 
             {
-                send this, eDeltaMessage, (phase = PHASE, from=i, dst=leader, payload = true);
+                id = i+1;
+                send this, eMessage, (phase = PHASE, from=participants[id], payload = true);
                 i = i + 1;
             }
 
@@ -159,47 +168,50 @@ machine TwoPhaseSync
 
     fun Init(phase: Phase)
     {
-        var i: int; i = 0;
+        var i: int; 
+        var p: machine;
+        
+        i = 0;
        
-        decision = default(map[Participant,map[Phase, Vote]]);
+        decision = default(map[machine,map[Phase, Vote]]);
         messages = default(Messages);
-
-        while (i < N) {
-            decision[i] = default(map[Phase, Vote]);
+        
+        while (i < numBackups+1) {
+            p = participants[i];
+            decision[p] = default(map[Phase, Vote]);
             
-            messages[i] = default(Mbox);
-            messages[i][PHASE] = default(map[Round, seq[Message]]);
+            messages[p] = default(Mbox);
+            messages[p][PHASE] = default(map[Round, seq[Message]]);
 
-            messages[i][PHASE][ALPHA] = default(seq[Message]);
-            messages[i][PHASE][BETA] = default(seq[Message]);
-            messages[i][PHASE][GAMMA] = default(seq[Message]);
-            messages[i][PHASE][DELTA] = default(seq[Message]);
+            messages[p][PHASE][ALPHA] = default(seq[Message]);
+            messages[p][PHASE][BETA] = default(seq[Message]);
+            messages[p][PHASE][GAMMA] = default(seq[Message]);
+            messages[p][PHASE][DELTA] = default(seq[Message]);
 
             i = i+1;
         }
     }
 
-    // In this protocol there always N messages on flight, all-to-one or one-to-all
-    fun ReceiveMessages(r : Round)
+    // In this protocol there always N-1 messages on flight, all-to-one or one-to-all
+    fun ReceiveMessages(r: Round)
     {
-        var i: int; i = 0;
-        while (i < N) {
+        var i: int; 
+        var p: machine;
+        
+        i = 1;
+        
+        while (i <= numBackups) {
+            p = participants[i];
+            
             receive {
-                case eAlphaMessage: (m: Message) { 
-                    messages[m.dst][PHASE][ALPHA] += (sizeof(messages[m.dst][PHASE][ALPHA]), m); 
-                }
-                case eBetaMessage: (m: Message) { 
-                    messages[m.dst][PHASE][BETA] += (sizeof(messages[m.dst][PHASE][BETA]), m); 
-                }
-                case eGammaMessage: (m: Message) { 
-                    messages[m.dst][PHASE][GAMMA] += (sizeof(messages[m.dst][PHASE][GAMMA]), m); 
-                }
-                case eDeltaMessage: (m: Message) { 
-                    messages[m.dst][PHASE][DELTA] += (sizeof(messages[m.dst][PHASE][DELTA]), m); 
+                case eMessage: (m: Message) { 
+                    messages[p][PHASE][r] += (sizeof(messages[p][PHASE][r]), m); 
                 }
             }
             i = i + 1;
         }
     }
+
+   
 
 }

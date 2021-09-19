@@ -2,56 +2,72 @@
 
 type Timestamp = (phase: Phase, round: Round);
 
-spec SyncTagInvariant observes eAlphaMessage, eBetaMessage, eGammaMessage, eDeltaMessage, eMonitor_Initialize
+event eMonitor_TimestampChange : (id: machine, ts: Timestamp);
+event eMonitor_Send : (localTs : Timestamp, sentTs: Timestamp);
+
+spec SyncTagInvariant observes eMonitor_Initialize, eMonitor_TimestampChange, eAlphaMessage, eBetaMessage, eGammaMessage, eDeltaMessage
 {
     // a map saving the current phase for every participant
-    var participantsTimestamp: map[Participant, Timestamp];
+    var participants : seq[machine];
+    var participantsTimestamp: map[machine, Timestamp];
     var numParticipants: int;
     start state Init {
-        on eMonitor_Initialize goto WaitForEvents with (n: int) {
+        on eMonitor_Initialize goto WaitForEvents with (participants: seq[machine]) {
             var i: int; 
 
-            numParticipants = n;
+            participants = participants;
+            numParticipants = sizeof(participants);
 
             i = 0;
             while (i < numParticipants) 
             {
-                participantsTimestamp[i] = (phase=0, round=ALPHA);
+                participantsTimestamp[participants[i]] = (phase=0, round=ALPHA);
                 i = i + 1;
             }
         }
     }
 
     state WaitForEvents {
-        on eAlphaMessage do (m: Message){
-            assertMonotonicallyIncreasingSend(m, ALPHA);
+        on eMonitor_TimestampChange do (payload: (id: machine, ts: Timestamp)){
+            assertStateMonotonicallyIncreasing(payload.id, payload.ts);
+        }
+
+        on eAlphaMessage do (m: Message) {
+            assertSendWithCurrentTimestamp(m.from, (phase=m.phase, round=ALPHA));
         }
 
         on eBetaMessage do (m: Message){
-            assertMonotonicallyIncreasingSend(m, BETA);
+            assertSendWithCurrentTimestamp(m.from, (phase=m.phase, round=BETA));
         }
 
-        on eGammaMessage do (m: Message){
-            assertMonotonicallyIncreasingSend(m, GAMMA);
+        on eGammaMessage do (m: Message) {
+            assertSendWithCurrentTimestamp(m.from, (phase=m.phase, round=GAMMA));
         }
 
-        on eDeltaMessage do (m: Message){
-            assertMonotonicallyIncreasingSend(m, DELTA);
+        on eDeltaMessage do (m: Message) {
+            assertSendWithCurrentTimestamp(m.from, (phase=m.phase, round=DELTA));
         }
     }
 
-    fun assertMonotonicallyIncreasingSend(m : Message, r : Round)
+    fun assertSendWithCurrentTimestamp(id : machine, sendTs : Timestamp)
     {
         var currentTs : Timestamp;
-        var sendTs : Timestamp;
+        currentTs = participantsTimestamp[id];
 
-        currentTs = participantsTimestamp[m.from];
-        sendTs = (phase=m.phase, round=r);
+        assert (equalTimestamp(currentTs,sendTs)), format ("Send with different timestamp. Timestamp before {0}, new {1}", currentTs, sendTs);
+
+    }
+
+    fun assertStateMonotonicallyIncreasing(id : machine, newTs : Timestamp)
+    {
+        var currentTs : Timestamp;
+
+        currentTs = participantsTimestamp[id];
         
-        assert (geqTimestamp(currentTs,sendTs)),
-        format ("Participant sent a message tagged with a past timestamp. Sent {0}, last send {1}", sendTs, currentTs);
+        assert (geqTimestamp(currentTs,newTs)),
+        format ("Participant decreased its local timestamp. Timestamp before {0}, new {1}", currentTs, newTs);
 
-        participantsTimestamp[m.from] = sendTs;
+        participantsTimestamp[id] = newTs;
     }
 
     // Check if ts1 <= ts2
@@ -60,16 +76,21 @@ spec SyncTagInvariant observes eAlphaMessage, eBetaMessage, eGammaMessage, eDelt
         return ts2.phase > ts1.phase || (ts2.phase == ts1.phase && roundInt(ts1.round) <= roundInt(ts2.round));
     }
 
+    fun equalTimestamp(ts1 : Timestamp, ts2 : Timestamp) : bool
+    {
+        return ts2.phase == ts1.phase && roundInt(ts1.round) == roundInt(ts2.round);
+    }
+
     fun roundInt(r : Round) : int
     {
         if(r == ALPHA){
-            return 1;
+            return 0;
         }else if(r == BETA){
-            return 2;
+            return 1;
         }else if(r == GAMMA){
-            return 3;
+            return 2;
         }else{
-            return 4;
+            return 3;
         }
     }
 }

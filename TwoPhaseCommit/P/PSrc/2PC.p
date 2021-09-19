@@ -1,9 +1,9 @@
 event eMessage : Message;
 
-event eAlphaMessage: (phase: Phase, from: Participant, dst: Participant, payload: AlphaPayload);
-event eBetaMessage: (phase: Phase, from: Participant, dst: Participant, payload: BetaPayload);
-event eGammaMessage: (phase: Phase, from: Participant, dst: Participant, payload: GammaPayload);
-event eDeltaMessage: (phase: Phase, from: Participant, dst: Participant, payload: DeltaPayload);
+event eAlphaMessage: (phase: Phase, from: machine, payload: AlphaPayload);
+event eBetaMessage: (phase: Phase, from: machine, payload: BetaPayload);
+event eGammaMessage: (phase: Phase, from: machine, payload: GammaPayload);
+event eDeltaMessage: (phase: Phase, from: machine, payload: DeltaPayload);
 
 type Command = int;
 type Phase = int;
@@ -14,7 +14,7 @@ event eClientRequest: ClientRequest;
 
 type ClientRequest = (transactionId: int, command: string);
 
-type Message = (phase: Phase, from: Participant, dst: Participant, payload: data);
+type Message = (phase: Phase, from: machine, payload: data);
 
 type AlphaPayload = Command;
 type BetaPayload = Vote;
@@ -27,8 +27,7 @@ enum Vote {COMMIT, ABORT}
 machine Primary
 {
     var numBackup : int;
-    var ID : Participant;
-    var participants : seq[Backup];
+    var backups : seq[Backup];
     var localPhase : Phase;
     var mbox : Mbox;
     var commitvotes : map[Phase, int];
@@ -38,15 +37,20 @@ machine Primary
     {
         defer eClientRequest;
 
-        entry (payload: (id: Participant, participants: seq[Backup])){
-            participants = payload.participants;
-            ID = payload.id;
-            numBackup = sizeof(payload.participants);
+        entry (b: seq[Backup]){
+            var participants : seq[machine];
+
+            backups = b;
+            numBackup = sizeof(backups);
             sendConfig();
 
-            announce eMonitor_Initialize, numBackup+1;
+            participants = backups;
+            participants += (sizeof(participants), this);
+
+            announce eMonitor_Initialize, participants;
 
             localPhase = 0; 
+
             goto Alpha;
         }
     }
@@ -55,11 +59,17 @@ machine Primary
     {
         defer eAlphaMessage, eBetaMessage, eDeltaMessage, eGammaMessage;
 
+        entry {
+            announce eMonitor_TimestampChange, (id=this, ts=(phase=localPhase, round=ALPHA));
+        }
+
         on eClientRequest do (m : ClientRequest) 
         {
             var newcommand : Command;
+
             initMbox(localPhase);
-            Broadcast(eAlphaMessage, (phase = localPhase, from=ID, dst=0, payload = newcommand));
+
+            Broadcast(eAlphaMessage, (phase = localPhase, from=this, payload = newcommand));
             goto Beta;
         }
     }
@@ -67,6 +77,10 @@ machine Primary
     state Beta 
     {
         defer eClientRequest, eAlphaMessage, eGammaMessage, eDeltaMessage;
+
+        entry {
+            announce eMonitor_TimestampChange, (id=this, ts=(phase=localPhase, round=BETA));
+        }
 
         on eBetaMessage do (m : Message) 
         {
@@ -76,6 +90,8 @@ machine Primary
             }
 
             mbox[m.phase][BETA] += (sizeof(mbox[m.phase][BETA]),m);
+
+            //print format("Primary receives eBetaMessage {0} / {1}", sizeof(mbox[m.phase][BETA]), numBackup);
 
             if(sizeof(mbox[m.phase][BETA]) == numBackup)
             {
@@ -91,7 +107,9 @@ machine Primary
 
         entry 
         {
-            Broadcast(eGammaMessage, (phase = localPhase, from=ID, dst=0, payload = decision[localPhase]));
+            announce eMonitor_TimestampChange, (id=this, ts=(phase=localPhase, round=GAMMA));
+
+            Broadcast(eGammaMessage, (phase = localPhase, from=this, payload = decision[localPhase]));
             goto Delta;
         }
     }
@@ -99,6 +117,10 @@ machine Primary
     state Delta 
     {
         defer eClientRequest, eAlphaMessage, eBetaMessage, eGammaMessage;
+
+        entry {
+            announce eMonitor_TimestampChange, (id=this, ts=(phase=localPhase, round=DELTA));
+        }
 
         on eDeltaMessage do (m : Message) 
         {
@@ -132,17 +154,16 @@ machine Primary
         {
             decision = COMMIT;
         }
-        //decision = COMMIT; //BUG
+
         return decision;
     }
 
     fun Broadcast(message: event, payload: Message)
     {
-        var i: int; i = 1;
+        var i: int; i = 0;
         while (i < numBackup) 
         {
-            payload.dst = i;
-            send participants[i], message, payload;
+            send backups[i], message, payload;
             i = i + 1;
         }
     }
@@ -153,7 +174,7 @@ machine Primary
         i = 0;
         while (i < numBackup) 
         {
-            send participants[i], configMessage, this;
+            send backups[i], configMessage, this;
             i = i + 1;
         }
     }
@@ -161,17 +182,14 @@ machine Primary
 
 machine Backup
 {
-    var participants : seq[Backup];
-    var ID : Participant;
     var localPhase : Phase;
     var leader : Primary;
     var decision : map[Phase, Vote];
 
     start state Init 
     {
-        entry (id: Participant)
+        entry
         {
-            ID = id;
             localPhase = 0;
         }
 
@@ -186,6 +204,7 @@ machine Backup
     {
         on eAlphaMessage do (m : Message) 
         {
+            announce eMonitor_TimestampChange, (id=this, ts=(phase=localPhase, round=ALPHA));
             goto Beta;
         }
     }
@@ -196,12 +215,15 @@ machine Backup
         entry 
         {
             var v : Vote;
+            
+            announce eMonitor_TimestampChange, (id=this, ts=(phase=localPhase, round=BETA));
+
             v = ABORT;
             if($)
             {
                 v = COMMIT;
             }
-            send leader, eBetaMessage, (phase = localPhase, from=ID, dst=0, payload = v);
+            send leader, eBetaMessage, (phase = localPhase, from=this, payload = v);
             goto Gamma;
         }
 
@@ -209,6 +231,10 @@ machine Backup
 
     state Gamma 
     {
+        entry {
+            announce eMonitor_TimestampChange, (id=this, ts=(phase=localPhase, round=GAMMA));
+        }
+
         on eGammaMessage do (m : Message) 
         {
             if(m.payload == COMMIT)
@@ -224,7 +250,9 @@ machine Backup
     state Delta {
         entry 
         {
-            send leader, eDeltaMessage, (phase = localPhase, from=ID, dst=0, payload=true);
+            announce eMonitor_TimestampChange, (id=this, ts=(phase=localPhase, round=DELTA));
+
+            send leader, eDeltaMessage, (phase = localPhase, from=this, payload=true);
             localPhase = localPhase+1;
             goto Alpha;
         }
