@@ -1,11 +1,10 @@
 // We would like to assert the atomicity property that if a transaction is committed by the coordinator then it was agreed on by all participants
 
-type Timestamp = (phase: Phase, round: Round);
-
 event eMonitor_TimestampChange : (id: machine, ts: Timestamp);
+event eMonitor_MessageReceived : (localTs: Timestamp, msgTs: Timestamp);
 event eMonitor_Send : (localTs : Timestamp, sentTs: Timestamp);
 
-spec SyncTagInvariant observes eMonitor_Initialize, eMonitor_TimestampChange, eAlphaMessage, eBetaMessage, eGammaMessage, eDeltaMessage
+spec SyncTagInvariant observes eMonitor_Initialize, eMonitor_TimestampChange, eMonitor_MessageReceived, eAlphaMessage, eBetaMessage, eGammaMessage, eDeltaMessage
 {
     // a map saving the current phase for every participant
     var participants : seq[machine];
@@ -32,6 +31,10 @@ spec SyncTagInvariant observes eMonitor_Initialize, eMonitor_TimestampChange, eA
             assertStateMonotonicallyIncreasing(payload.id, payload.ts);
         }
 
+        on eMonitor_MessageReceived do (payload: (localTs: Timestamp, msgTs: Timestamp)){
+            assertReceivedMessageIsFromGeqTime(payload.localTs, payload.msgTs);
+        }
+
         on eAlphaMessage do (m: Message) {
             assertSendWithCurrentTimestamp(m.from, (phase=m.phase, round=ALPHA));
         }
@@ -47,6 +50,11 @@ spec SyncTagInvariant observes eMonitor_Initialize, eMonitor_TimestampChange, eA
         on eDeltaMessage do (m: Message) {
             assertSendWithCurrentTimestamp(m.from, (phase=m.phase, round=DELTA));
         }
+    }
+
+    fun assertReceivedMessageIsFromGeqTime(localTs : Timestamp, msgTs : Timestamp)
+    {
+         assert (geqTimestamp(localTs,msgTs)), format ("Received and stored message with past timestamp. Timestamp local state {0}, received message {1}", localTs, msgTs);
     }
 
     fun assertSendWithCurrentTimestamp(id : machine, sendTs : Timestamp)

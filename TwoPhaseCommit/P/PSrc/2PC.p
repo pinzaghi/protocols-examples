@@ -8,6 +8,7 @@ event eDeltaMessage: (phase: Phase, from: machine, payload: DeltaPayload);
 type Command = int;
 type Phase = int;
 type Mbox = map[Phase, map[Round, seq[Message]]];
+type Timestamp = (phase: Phase, round: Round);
 
 event configMessage: Primary;
 event eClientRequest: ClientRequest;
@@ -84,6 +85,8 @@ machine Primary
 
         on eBetaMessage do (m : Message) 
         {
+            announce eMonitor_MessageReceived, (localTs=(phase=localPhase, round=BETA), msgTs=(phase=m.phase, round=BETA));
+
             if(m.payload == COMMIT)
             {
                 commitvotes[m.phase] = commitvotes[m.phase]+1;
@@ -124,6 +127,8 @@ machine Primary
 
         on eDeltaMessage do (m : Message) 
         {
+            announce eMonitor_MessageReceived, (localTs=(phase=localPhase, round=DELTA), msgTs=(phase=m.phase, round=DELTA));
+
             mbox[m.phase][DELTA] += (sizeof(mbox[m.phase][DELTA]),m);
 
             if(sizeof(mbox[m.phase][DELTA]) == numBackup)
@@ -204,6 +209,7 @@ machine Backup
     {
         on eAlphaMessage do (m : Message) 
         {
+            announce eMonitor_MessageReceived, (localTs=(phase=localPhase, round=ALPHA), msgTs=(phase=m.phase, round=ALPHA));
             announce eMonitor_TimestampChange, (id=this, ts=(phase=localPhase, round=ALPHA));
             goto Beta;
         }
@@ -237,6 +243,7 @@ machine Backup
 
         on eGammaMessage do (m : Message) 
         {
+            announce eMonitor_MessageReceived, (localTs=(phase=localPhase, round=GAMMA), msgTs=(phase=m.phase, round=GAMMA));
             if(m.payload == COMMIT)
             {
                 decision[localPhase] = COMMIT;
